@@ -1,0 +1,43 @@
+name: Fetch SITREP RSS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fetch RSS feed
+        run: |
+          curl --fail --location --silent --show-error \
+            'https://script.google.com/macros/s/AKfycbz9Ov2hxvfUNPixCtdWUyU4SiVwBKAkbkD9MiBeow4v1PTFtOV5hI7GP67CHG2OwtnmwQ/exec' \
+            --output feed.xml
+
+      - name: Verify feed
+        run: |
+          test -s feed.xml
+          COUNT=$(grep -o '<item>' feed.xml | wc -l | tr -d ' ')
+          echo "SITREP items found: $COUNT"
+          if [ "$COUNT" != "21" ]; then
+            echo "Expected 21 SITREP items but found $COUNT"
+            exit 1
+          fi
+          grep -q '<title>Will Self — SITREP Archive</title>' feed.xml
+
+      - name: Commit static feed
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add feed.xml
+          if git diff --cached --quiet; then
+            echo 'No feed changes to commit.'
+          else
+            git commit -m 'Add static SITREP RSS feed'
+            git push
+          fi
