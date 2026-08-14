@@ -26,22 +26,51 @@ jobs:
             'https://script.google.com/macros/s/AKfycbz9Ov2hxvfUNPixCtdWUyU4SiVwBKAkbkD9MiBeow4v1PTFtOV5hI7GP67CHG2OwtnmwQ/exec' \
             --output feed.xml
 
-      - name: Verify feed
+      - name: Build one-item latest feed
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path('feed.xml').read_text(encoding='utf-8-sig')
+          matches = list(re.finditer(r'<item>.*?</item>', text, flags=re.S))
+
+          if not matches:
+              raise SystemExit('No RSS items found; cannot build latest.xml')
+
+          first = matches[0]
+          last = matches[-1]
+          latest = text[:first.start()] + text[last.start():last.end()] + text[last.end():]
+
+          Path('latest.xml').write_text(latest, encoding='utf-8')
+          PY
+
+      - name: Verify feeds
         run: |
           set -euo pipefail
           test -s feed.xml
+          test -s latest.xml
           grep -q '<title>Will Self — SITREP Archive</title>' feed.xml
+          grep -q '<title>Will Self — SITREP Archive</title>' latest.xml
 
           COUNT=$(grep -o '<item>' feed.xml | wc -l | tr -d ' ')
+          LATEST_COUNT=$(grep -o '<item>' latest.xml | wc -l | tr -d ' ')
+
           echo "SITREP items found: $COUNT"
+          echo "Items in latest.xml: $LATEST_COUNT"
 
           if [ "$COUNT" -lt 21 ]; then
             echo "Feed unexpectedly contains fewer than the original 21 SITREPs."
             exit 1
           fi
 
-          LATEST_GUID=$(grep -o '<guid isPermaLink="false">[^<]*</guid>' feed.xml | tail -1 | sed -E 's#</?guid[^>]*>##g')
-          LATEST_TITLE=$(grep -o '<title>[^<]*</title>' feed.xml | tail -1 | sed -E 's#</?title>##g')
+          if [ "$LATEST_COUNT" -ne 1 ]; then
+            echo "latest.xml must contain exactly one SITREP."
+            exit 1
+          fi
+
+          LATEST_GUID=$(grep -o '<guid isPermaLink="false">[^<]*</guid>' latest.xml | tail -1 | sed -E 's#</?guid[^>]*>##g')
+          LATEST_TITLE=$(grep -o '<title>[^<]*</title>' latest.xml | tail -1 | sed -E 's#</?title>##g')
           echo "Latest GUID: $LATEST_GUID"
           echo "Latest title: $LATEST_TITLE"
 
@@ -49,20 +78,20 @@ jobs:
           printf '%s\n' "$LATEST_GUID" > latest-guid.txt
           printf '%s\n' "$LATEST_TITLE" > latest-title.txt
 
-      - name: Commit refreshed feed
+      - name: Commit refreshed feeds
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          git add feed.xml sitrep-count.txt latest-guid.txt latest-title.txt
+          git add feed.xml latest.xml sitrep-count.txt latest-guid.txt latest-title.txt
 
           if git diff --cached --quiet; then
             echo 'No feed changes to commit.'
             exit 0
           fi
 
-          git commit -m 'Refresh SITREP RSS feed'
+          git commit -m 'Refresh SITREP RSS feeds'
 
           git pull --rebase origin main
           git push origin HEAD:main
