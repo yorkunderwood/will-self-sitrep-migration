@@ -3,7 +3,7 @@ name: Fetch SITREP RSS
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
@@ -61,7 +61,5 @@ jobs:
 
           git commit -m 'Refresh SITREP RSS feed'
 
-          # Another edit may have landed while this run was fetching X/Apps Script.
-          # Rebase the bot commit onto the newest main before pushing.
           git pull --rebase origin main
           git push origin HEAD:main
