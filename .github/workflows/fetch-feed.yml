@@ -45,7 +45,7 @@ jobs:
           Path('latest.xml').write_text(latest, encoding='utf-8')
           PY
 
-      - name: Verify feeds
+      - name: Verify feeds and create permanent SITREP feed
         run: |
           set -euo pipefail
           test -s feed.xml
@@ -71,12 +71,24 @@ jobs:
 
           LATEST_GUID=$(grep -o '<guid isPermaLink="false">[^<]*</guid>' latest.xml | tail -1 | sed -E 's#</?guid[^>]*>##g')
           LATEST_TITLE=$(grep -o '<title>[^<]*</title>' latest.xml | tail -1 | sed -E 's#</?title>##g')
+          LATEST_NUM=$(printf '%s\n' "$LATEST_GUID" | sed -E 's/^sitrep-([0-9]+)-.*/\1/')
+
+          if [ -z "$LATEST_NUM" ] || [ "$LATEST_NUM" = "$LATEST_GUID" ]; then
+            echo "Could not derive SITREP number from GUID: $LATEST_GUID"
+            exit 1
+          fi
+
+          UNIQUE_FEED="sitrep-${LATEST_NUM}.xml"
+          cp latest.xml "$UNIQUE_FEED"
+
           echo "Latest GUID: $LATEST_GUID"
           echo "Latest title: $LATEST_TITLE"
+          echo "Permanent feed: $UNIQUE_FEED"
 
           printf '%s\n' "$COUNT" > sitrep-count.txt
           printf '%s\n' "$LATEST_GUID" > latest-guid.txt
           printf '%s\n' "$LATEST_TITLE" > latest-title.txt
+          printf '%s\n' "$UNIQUE_FEED" > latest-feed-file.txt
 
       - name: Commit refreshed feeds
         run: |
@@ -84,7 +96,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          git add feed.xml latest.xml sitrep-count.txt latest-guid.txt latest-title.txt
+          git add feed.xml latest.xml sitrep-count.txt latest-guid.txt latest-title.txt latest-feed-file.txt sitrep-*.xml
 
           if git diff --cached --quiet; then
             echo 'No feed changes to commit.'
